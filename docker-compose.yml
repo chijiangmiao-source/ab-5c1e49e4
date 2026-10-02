@@ -1,0 +1,54 @@
+# Seabed observatory signed-checkpoint transparency log.
+#
+#   docker compose up -d api          # serve the API on the host port
+#   docker compose run --rm verify    # acceptance verdict (exit code)
+#
+# The host-side port is configurable, e.g. PORT=18080 docker compose up -d.
+
+name: seabed-checkpoint
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: seabed-checkpoint:latest
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8080"
+      DATA_DIR: /data
+    ports:
+      # host:container; only the host side is configurable via ${PORT}
+      - "${PORT:-8080}:8080"
+    volumes:
+      - checkpoint-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import json,os,urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8080/healthz',timeout=2); json.load(r)"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 2s
+
+  verify:
+    image: seabed-checkpoint:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python3", "/app/verify/acceptance.py"]
+    environment:
+      BASE_URL: http://api:8080
+      DATA_DIR: /data
+      BUILD_INFO: /build-info.json
+      SHIPPED_ROOT: /app
+      APP_PKG: /app/app
+      RESTART_PORT: "8091"
+    volumes:
+      - checkpoint-data:/data
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  checkpoint-data:
